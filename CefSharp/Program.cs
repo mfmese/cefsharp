@@ -17,8 +17,7 @@ namespace CefSharp
         {
             const string mainUrl = "https://www.cars.com";
 
-            Console.WriteLine("This application will load {0}. Please wait...", mainUrl);
-            Console.WriteLine();
+            log(string.Format("This application will load {0}. Please wait...", mainUrl));          
             
             AsyncContext.Run(async delegate
             {
@@ -68,9 +67,9 @@ namespace CefSharp
 
                 searchFilter.models = await getSelectedModelFilterAsync(addresses.FirstOrDefault(), 0);
 
-                var cars2 = await generateCarsAsync(addresses, searchFilter, mainUrl);
+                var filteredCars = await generateCarsAsync(addresses, searchFilter, mainUrl);
 
-                cars.AddRange(cars2);
+                cars.AddRange(filteredCars);
 
                 var jsonResult = JsonConvert.SerializeObject(cars);
 
@@ -119,7 +118,8 @@ namespace CefSharp
                         log(string.Format("Page load failed with ErrorCode:{0}, HttpStatusCode:{1}", initialLoadResponse.ErrorCode, initialLoadResponse.HttpStatusCode));
                     }
 
-                    cars = await generateCarsAsync(browser);
+                    var generatedCars = await generateCarsAsync(browser);
+                    cars.AddRange(generatedCars);
 
                     int i = 0;
                     foreach (var car in cars)
@@ -174,12 +174,6 @@ namespace CefSharp
             return addresses;
         }
 
-        private async static Task clickHomeDeliveryAsync(ChromiumWebBrowser browser, int index)
-        {
-            var clickPageNumber = $"document.querySelector('#vehicle-cards-container').querySelectorAll(':scope > .vehicle-card')[{index}].querySelector('.sds-badge--home-delivery').click()";
-            await browser.EvaluateScriptAsync(clickPageNumber);
-        }
-
         private async static Task<List<Car>> generateCarsAsync(ChromiumWebBrowser browser)
         {
             const string script = @"(function(){
@@ -225,7 +219,6 @@ namespace CefSharp
 
         private async static Task<List<HomeDelivery>> generateHomeDelivery(ChromiumWebBrowser browser, int index)
         {
-
             await clickHomeDeliveryAsync(browser, index);
 
             Thread.Sleep(500); //Modal loading here...
@@ -261,6 +254,12 @@ namespace CefSharp
             return homeDeliveries;
         }
 
+        private async static Task clickHomeDeliveryAsync(ChromiumWebBrowser browser, int index)
+        {
+            var clickPageNumber = $"document.querySelector('#vehicle-cards-container').querySelectorAll(':scope > .vehicle-card')[{index}].querySelector('.sds-badge--home-delivery').click()";
+            await browser.EvaluateScriptAsync(clickPageNumber);
+        }
+
         private static async Task<string> getSelectedModelFilterAsync(string url, int index)
         {
             using (var browser = new ChromiumWebBrowser(url))
@@ -278,9 +277,7 @@ namespace CefSharp
                     return null;
 
                 return (string)response.Result;
-            }
-
-            
+            }            
         }
 
         private static void writeToFileAndOpen(string jsonResult)
