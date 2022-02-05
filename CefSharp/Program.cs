@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,8 +19,7 @@ namespace CefSharp
 
             Console.WriteLine("This application will load {0}. Please wait...", mainUrl);
             Console.WriteLine();
-
-            var cars = new List<Car>();
+            
             AsyncContext.Run(async delegate
             {
                 var settings = new CefSettings()
@@ -64,34 +64,13 @@ namespace CefSharp
 
                 var addresses = await generateAddressAsync(searchFilter, mainUrl);
 
-                foreach (var address in addresses)
-                {
-                    using (var browser = new ChromiumWebBrowser(address))
-                    {
-                        var initialLoadResponse = await browser.WaitForInitialLoadAsync();
-                        if (!initialLoadResponse.Success)
-                        {
-                            log(string.Format("Page load failed with ErrorCode:{0}, HttpStatusCode:{1}", initialLoadResponse.ErrorCode, initialLoadResponse.HttpStatusCode));
-                        }
+                var cars = await generateCarsAsync(addresses, searchFilter, mainUrl);
 
-                        cars = await generateCarsAsync(browser);
+                searchFilter.models = await getSelectedModelFilterAsync(addresses.FirstOrDefault(), 0);
 
-                        int i = 0;
-                        foreach (var car in cars)
-                        {
-                            if (!car.hasHomeDelivery)
-                                continue;
+                var cars2 = await generateCarsAsync(addresses, searchFilter, mainUrl);
 
-                            var homeDeliveries = await generateHomeDelivery(browser, i);
-                            if (homeDeliveries == null)
-                                continue;
-
-                            car.HomeDeliveries.AddRange(homeDeliveries);
-
-                            i++;
-                        }
-                    }
-                }
+                cars.AddRange(cars2);
 
                 var jsonResult = JsonConvert.SerializeObject(cars);
 
@@ -124,6 +103,42 @@ namespace CefSharp
             _ = await browser.EvaluateScriptAsync($"document.getElementsByName('zip')[0].value = '{filter.zip}'");
 
             _ = await browser.EvaluateScriptAsync("document.querySelector('.sds-button').click();");
+        }
+
+        private async static Task<List<Car>> generateCarsAsync(List<string> addresses, SearchFilter searchFilter, string mainUrl)
+        {            
+            var cars = new List<Car>();
+
+            foreach (var address in addresses)
+            {
+                using (var browser = new ChromiumWebBrowser(address))
+                {
+                    var initialLoadResponse = await browser.WaitForInitialLoadAsync();
+                    if (!initialLoadResponse.Success)
+                    {
+                        log(string.Format("Page load failed with ErrorCode:{0}, HttpStatusCode:{1}", initialLoadResponse.ErrorCode, initialLoadResponse.HttpStatusCode));
+                    }
+
+                    cars = await generateCarsAsync(browser);
+
+                    int i = 0;
+                    foreach (var car in cars)
+                    {
+                        if (!car.hasHomeDelivery)
+                            continue;
+
+                        var homeDeliveries = await generateHomeDelivery(browser, i);
+                        if (homeDeliveries == null)
+                            continue;
+
+                        car.HomeDeliveries.AddRange(homeDeliveries);
+
+                        i++;
+                    }
+                }
+            }
+
+            return cars;
         }
 
         private async static Task<List<string>> generateAddressAsync(SearchFilter searchFilter, string mainUrl)
@@ -244,6 +259,28 @@ namespace CefSharp
             var homeDeliveries = JsonConvert.DeserializeObject<List<HomeDelivery>>(jsonString);
 
             return homeDeliveries;
+        }
+
+        private static async Task<string> getSelectedModelFilterAsync(string url, int index)
+        {
+            using (var browser = new ChromiumWebBrowser(url))
+            {
+                var initialLoadResponse = await browser.WaitForInitialLoadAsync();
+                if (!initialLoadResponse.Success)
+                {
+                    log(string.Format("Page load failed with ErrorCode:{0}, HttpStatusCode:{1}", initialLoadResponse.ErrorCode, initialLoadResponse.HttpStatusCode));
+                }
+
+                var script = $"var model = document.querySelectorAll('.refinement-simple')[0].querySelectorAll('.sds-input')[{index}].value; return model;";
+
+                JavascriptResponse response = await browser.EvaluateScriptAsync(script);
+                if (!response.Success)
+                    return null;
+
+                return (string)response.Result;
+            }
+
+            
         }
 
         private static void writeToFileAndOpen(string jsonResult)
