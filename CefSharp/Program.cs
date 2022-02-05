@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace CefSharp
 {
@@ -29,50 +30,110 @@ namespace CefSharp
                     throw new Exception("Unable to initialize CEF, check the log file.");
                 }
 
-                // Create the CefSharp.OffScreen.ChromiumWebBrowser instance
-                using (var browser = new ChromiumWebBrowser(mainUrl))
+                await signInAsync(mainUrl);
+
+                var addresses = await generateAddressAsync();
+
+                using (var browser = new ChromiumWebBrowser(addresses[0]))
                 {
-                    var initialLoadResponse = await browser.WaitForInitialLoadAsync();
+                    await browser.WaitForInitialLoadAsync();
 
-                    if (!initialLoadResponse.Success)
+                    var cars = await generateCarsAsync(browser);
+
+                    int i = 0;
+                    foreach (var car in cars)
                     {
-                        throw new Exception(string.Format("Page load failed with ErrorCode:{0}, HttpStatusCode:{1}", initialLoadResponse.ErrorCode, initialLoadResponse.HttpStatusCode));
+
+                        if (!car.hasHomeDelivery)
+                        {
+                            continue;
+                        }
+
+                        var response = await browser.EvaluateScriptAsync($"document.querySelector('#vehicle-cards-container').querySelectorAll(':scope > .vehicle-card')[{i}].querySelector('.sds-badge--home-delivery').click()");
+
+                        Thread.Sleep(500);
+
+                        var homeDeliveries = await generateHomeDelivery(browser);
+                        if (homeDeliveries == null)
+                            continue;
+
+                        car.HomeDeliveries.AddRange(homeDeliveries);
+
+                        i++;
                     }
 
-                    _ = await browser.EvaluateScriptAsync("document.querySelector('[id=email]').value = 'johngerson808@gmail.com'");
-                    _ = await browser.EvaluateScriptAsync("document.querySelector('[id=password]').value = 'test8008'");
-                    _ = await browser.EvaluateScriptAsync("document.querySelector('.sds-button').click();");
+                    var jsonResult = JsonConvert.SerializeObject(cars);
 
-                    _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByClassName('sds-button')[0].click(); })();");
-                    _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('stock_type')[0].value = 'used' })();");
-                    _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('makes[]')[0].value = 'Tesla' })();");
-                    _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('models[]')[0].value = 'All models' })();");
-                    _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('list_price_max')[0].value = '10000' })();");
-                    _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('maximum_distance')[0].value = 'all' })();");
-                    _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('zip')[0].value = '94596' })();");
-                    _ = await browser.EvaluateScriptAsync("document.querySelector('.sds-button').click();");
+                    File.WriteAllText("c:/temp/cefsharpresult.text", jsonResult);
 
+                }
 
+                Console.WriteLine("Image viewer launched. Press any key to exit.");
 
-                    var pageAddress1 = string.Empty;
-                    var pageAddress2 = string.Empty;
-                    var host = "https://www.cars.com";
-                    using (var browser2 = new ChromiumWebBrowser(host  + "/shopping/results/?stock_type=used&makes%5B%5D=tesla&models%5B%5D=&list_price_max=&maximum_distance=all&zip=94596"))
+                // Wait for user to press a key before exit
+                Console.ReadKey();
+
+                // Clean up Chromium objects. You need to call this in your application otherwise you will get a crash when closing.
+                Cef.Shutdown();
+            });
+
+            return 0;
+        }
+
+        private async static Task signInAsync(string url)
+        {
+            using (var browser = new ChromiumWebBrowser(url))
+            {
+                var initialLoadResponse = await browser.WaitForInitialLoadAsync();
+
+                if (!initialLoadResponse.Success)
+                {
+                    throw new Exception(string.Format("Page load failed with ErrorCode:{0}, HttpStatusCode:{1}", initialLoadResponse.ErrorCode, initialLoadResponse.HttpStatusCode));
+                }
+
+                _ = await browser.EvaluateScriptAsync("document.querySelector('[id=email]').value = 'johngerson808@gmail.com'");
+                _ = await browser.EvaluateScriptAsync("document.querySelector('[id=password]').value = 'test8008'");
+                _ = await browser.EvaluateScriptAsync("document.querySelector('.sds-button').click();");
+
+                _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByClassName('sds-button')[0].click(); })();");
+                _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('stock_type')[0].value = 'used' })();");
+                _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('makes[]')[0].value = 'Tesla' })();");
+                _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('models[]')[0].value = 'All models' })();");
+                _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('list_price_max')[0].value = '10000' })();");
+                _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('maximum_distance')[0].value = 'all' })();");
+                _ = await browser.EvaluateScriptAsync("(function(){ document.getElementsByName('zip')[0].value = '94596' })();");
+                _ = await browser.EvaluateScriptAsync("document.querySelector('.sds-button').click();");
+            }
+        }
+
+        private async static Task<List<string>> generateAddressAsync()
+        {
+            var addresses = new List<string>();
+            var host = "https://www.cars.com";
+
+            for (int i = 1; i < 3; i++)
+            {
+                using (var browser = new ChromiumWebBrowser(host + "/shopping/results/?stock_type=used&makes%5B%5D=tesla&models%5B%5D=&list_price_max=&maximum_distance=all&zip=94596"))
+                {
+                    if (i == 1)
                     {
-                        var initialLoadResponse2 = await browser2.WaitForInitialLoadAsync();
-
-                        pageAddress1 = browser2.Address;
-
-                        var pageAddressResponse = await browser2.EvaluateScriptAsync("document.querySelector('[aria-label=\"Go to Page 2\"]').href");
-                        pageAddress2 = pageAddressResponse?.Result.ToString();
+                        addresses.Add(browser.Address);
+                        continue;
                     }
 
-                    var resultString = string.Empty;
-                    using (var browser2 = new ChromiumWebBrowser( pageAddress1))
-                    {
-                        var initialLoadResponse2 = await browser2.WaitForInitialLoadAsync();
+                    await browser.WaitForInitialLoadAsync();
+                    var pageAddressResponse = await browser.EvaluateScriptAsync($"document.querySelector('[aria-label=\"Go to Page {i}\"]').href");
+                    var address = pageAddressResponse?.Result.ToString();
+                    addresses.Add(address);
+                }
+            }
 
-                        const string script = @"(function()
+            return addresses;
+        }
+
+        private async static Task<List<Car>> generateCarsAsync(ChromiumWebBrowser browser)
+        {
+            const string script = @"(function()
                         {
                           let elements = document.querySelector('#vehicle-cards-container').querySelectorAll(':scope > .vehicle-card');
 
@@ -100,26 +161,19 @@ namespace CefSharp
                           return list;
                         })();";
 
-                                     
-                        JavascriptResponse response7 = await browser2.EvaluateScriptAsync(script);
-                        dynamic rr = response7.Result;
-                        string jsonString = JsonConvert.SerializeObject(rr);
 
-                        var cars = JsonConvert.DeserializeObject<List<Car>>(jsonString);
+            JavascriptResponse response7 = await browser.EvaluateScriptAsync(script);
+            dynamic rr = response7.Result;
+            string jsonString = JsonConvert.SerializeObject(rr);
 
-                        int i = 0;
-                        foreach (var car in cars)
-                        {
+            var cars = JsonConvert.DeserializeObject<List<Car>>(jsonString);
 
-                            if (!car.hasHomeDelivery)
-                            {
-                                continue;
-                            }                         
+            return cars;
+        }
 
-                            var response = await browser2.EvaluateScriptAsync($"document.querySelector('#vehicle-cards-container').querySelectorAll(':scope > .vehicle-card')[{i}].querySelector('.sds-badge--home-delivery').click()");
-
-                            Thread.Sleep(500);
-                            string homeDeliveryScript = @"(function()
+        private async static Task<List<HomeDelivery>> generateHomeDelivery(ChromiumWebBrowser browser)
+        {
+            string homeDeliveryScript = @"(function()
                                     {   
                                        var elements = document.querySelectorAll('.sds-modal__content-body')[2].querySelectorAll('li');
 
@@ -139,39 +193,17 @@ namespace CefSharp
                               
                                       return list;
                                     })();";
-                            JavascriptResponse response8 = await browser2.EvaluateScriptAsync(homeDeliveryScript);
-                            dynamic rr2 = response8?.Result;
-                            if (rr2 == null)
-                                continue;
+            JavascriptResponse response8 = await browser.EvaluateScriptAsync(homeDeliveryScript);
+            dynamic rr2 = response8?.Result;
+            if (rr2 == null)
+                return null;
 
-                            string jsonString2 = JsonConvert.SerializeObject(rr2);
-                            var homeDeliveries = JsonConvert.DeserializeObject<List<HomeDelivery>>(jsonString2);
-                            car.HomeDeliveries.AddRange(homeDeliveries);
+            string jsonString2 = JsonConvert.SerializeObject(rr2);
+            var homeDeliveries = JsonConvert.DeserializeObject<List<HomeDelivery>>(jsonString2);
 
-
-                            i++;
-                        }
-
-                        var jsonResult = JsonConvert.SerializeObject(cars);
-
-                        File.WriteAllText("c:/temp/cefsharpresult.text", jsonResult);
-
-                    }
-
-
-                    Console.WriteLine("Image viewer launched. Press any key to exit.");
-                }
-
-                // Wait for user to press a key before exit
-                Console.ReadKey();
-
-                // Clean up Chromium objects. You need to call this in your application otherwise
-                // you will get a crash when closing.
-                Cef.Shutdown();
-            });
-
-            return 0;
+            return homeDeliveries;
         }
-       
+
+
     }
 }
