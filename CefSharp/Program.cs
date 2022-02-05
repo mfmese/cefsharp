@@ -13,6 +13,11 @@ namespace CefSharp
 {
     public static class Program
     {
+        /// <summary>
+        /// Get car information from https://www.cars.com address and export as json file by using some filter search
+        /// </summary>
+        /// <param name="args"></param>
+        /// <returns></returns>
         public static int Main(string[] args)
         {
             const string mainUrl = "https://www.cars.com";
